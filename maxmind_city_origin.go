@@ -38,8 +38,8 @@ func MaxMindCityOriginCreate(filename string) (*MaxMindCityOrigin, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !strings.HasSuffix(db.Metadata.DatabaseType, "City") {
-		return nil, errors.New("provided database is not MaxMind City")
+	if !strings.HasSuffix(db.Metadata.DatabaseType, "City") && !strings.HasSuffix(db.Metadata.DatabaseType, "Country") {
+		return nil, errors.New("provided database is not MaxMind City or Country")
 	}
 
 	return &MaxMindCityOrigin{
