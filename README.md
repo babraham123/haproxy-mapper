@@ -265,6 +265,34 @@ Maps in out
  26169025 total
 ```
 
+## Per-country maps
+
+[geoip_generator.py](geoip_generator.py) downloads the free MaxMind GeoLite2
+Country database, runs `haproxy-mapper -country` on it, and splits
+`ip_to_country` into one file per country, `<ISO code>.map` with one CIDR per
+line. Every run replaces the `*.map` files in the output directory.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MAXMIND_LICENSE_KEY` | none, required | Downloads the database |
+| `OUTPUT_DIR` | `/etc/haproxy/countries` | Where the maps go |
+
+[geoip_generator.Containerfile](geoip_generator.Containerfile) builds
+haproxy-mapper and runs the script:
+
+```console
+$ podman build -f geoip_generator.Containerfile -t geoip_generator .
+$ podman run --rm -e MAXMIND_LICENSE_KEY \
+    -v /etc/haproxy/countries:/etc/haproxy/countries geoip_generator
+Successfully Generated 250 country files in: /etc/haproxy/countries
+```
+
+Each file is an HAProxy ACL pattern file, e.g. to block a country:
+
+```
+http-request deny if { src -f /etc/haproxy/countries/XX.map }
+```
+
 ## Related Links
 
 * https://www.haproxy.com/blog/introduction-to-haproxy-maps/
