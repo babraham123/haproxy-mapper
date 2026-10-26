@@ -11,6 +11,10 @@
   "minimumReleaseAge": "3 days",
   "osvVulnerabilityAlerts": true,
   "dependencyDashboardOSVVulnerabilitySummary": "unresolved",
+  "postUpdateOptions": [
+    "gomodTidy",
+    "gomodUpdateImportPaths"
+  ],
   "packageRules": [
     {
       "description": "A pin locks the version already in use, so there is no new release to wait out",
