@@ -1,15 +1,16 @@
-# Builds haproxy-mapper and runs geoip_generator.py: one HAProxy map per country from the
-# MaxMind GeoLite2 Country database. See the README's "Per-country maps".
+# haproxy-mapper in a container, defaulting to one HAProxy map per country from the
+# free MaxMind GeoLite2 Country database. See the README's "Per-country maps".
 # Usage:
 #   podman build -f geoip_generator.Containerfile -t geoip_generator .
 
 FROM docker.io/library/golang:1-alpine AS mapper
 WORKDIR /src
 COPY . .
-RUN go mod tidy && \
+RUN go mod download && \
     CGO_ENABLED=0 go build -ldflags="-s -w" -o /haproxy-mapper .
 
-FROM docker.io/library/python:3-alpine
-COPY --from=mapper /haproxy-mapper /usr/local/bin/haproxy-mapper
-COPY geoip_generator.py /usr/local/bin/geoip_generator.py
-ENTRYPOINT ["python3", "/usr/local/bin/geoip_generator.py"]
+# Root, so it can replace maps in a host directory owned by root.
+FROM gcr.io/distroless/static-debian12
+COPY --from=mapper /haproxy-mapper /haproxy-mapper
+ENTRYPOINT ["/haproxy-mapper"]
+CMD ["-geolite2", "-country-dir", "/etc/haproxy/countries"]

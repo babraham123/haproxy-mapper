@@ -46,7 +46,7 @@ func MaxMindCityOriginCreate(filename string) (*MaxMindCityOrigin, error) {
 		Filename: filename,
 		db:       db,
 		city: Emitter{
-			id: "maxmind.continent",
+			id: "maxmind.city",
 		},
 		continent: Emitter{
 			id: "maxmind.continent",
@@ -174,44 +174,68 @@ func (m *MaxMindCityOrigin) Run(ipv4Only bool) error {
 		if err != nil {
 			return err
 		}
-		if len(record.Continent.Code) > 0 {
-			location := record.Continent.Code
-			m.continent.Emit(BlockCreate(net, &record.Continent.Code))
+		if err := m.emit(net, &record); err != nil {
+			return err
+		}
+	}
+	if err := networks.Err(); err != nil {
+		return err
+	}
 
-			if len(record.Country.ISOCode) > 0 {
-				location += "/" + record.Country.ISOCode
-				m.country.Emit(BlockCreate(net, &record.Country.ISOCode))
-
-				subs := make([]string, 0)
-				for _, subdivision := range record.Subdivisions {
-					// There can be multiple subdivisions...
-					if subdivisionName, ok := subdivision.Names["en"]; ok {
-						location += "/" + subdivisionName
-						subs = append(subs, subdivisionName)
-					}
-				}
-				if len(subs) > 0 {
-					// We'll use a comma seperated list here as that will allow
-					// header parsing to see each subdivision as a seperate
-					// header value when there are multiple.
-					subs := strings.Join(subs, ", ")
-					m.subdivisions.Emit(BlockCreate(net, &subs))
-				}
-
-				if city, ok := record.City.Names["en"]; ok && len(city) > 0 {
-					location += "/" + city
-					m.city.Emit(BlockCreate(net, &city))
-				}
-			}
-			m.location.Emit(BlockCreate(net, &location))
+	for _, emitter := range []*Emitter{&m.city, &m.continent, &m.country, &m.location, &m.subdivisions} {
+		if err := emitter.Done(); err != nil {
+			return err
 		}
 	}
 
-	m.city.Done()
-	m.continent.Done()
-	m.country.Done()
-	m.location.Done()
-	m.subdivisions.Done()
-
 	return nil
+}
+
+func (m *MaxMindCityOrigin) emit(net *net.IPNet, record *recordCity) error {
+	if len(record.Continent.Code) == 0 {
+		return nil
+	}
+
+	location := record.Continent.Code
+	if err := m.continent.Emit(BlockCreate(net, &record.Continent.Code)); err != nil {
+		return err
+	}
+
+	if len(record.Country.ISOCode) > 0 {
+		location += "/" + record.Country.ISOCode
+		if err := m.country.Emit(BlockCreate(net, &record.Country.ISOCode)); err != nil {
+			return err
+		}
+
+		subs := make([]string, 0)
+		for _, subdivision := range record.Subdivisions {
+			// There can be multiple subdivisions...
+			if subdivisionName, ok := subdivision.Names["en"]; ok {
+				location += "/" + subdivisionName
+				subs = append(subs, subdivisionName)
+			}
+		}
+		if len(subs) > 0 {
+			// We'll use a comma seperated list here as that will allow
+			// header parsing to see each subdivision as a seperate
+			// header value when there are multiple.
+			subs := strings.Join(subs, ", ")
+			if err := m.subdivisions.Emit(BlockCreate(net, &subs)); err != nil {
+				return err
+			}
+		}
+
+		if city, ok := record.City.Names["en"]; ok && len(city) > 0 {
+			location += "/" + city
+			if err := m.city.Emit(BlockCreate(net, &city)); err != nil {
+				return err
+			}
+		}
+	}
+
+	return m.location.Emit(BlockCreate(net, &location))
+}
+
+func (m *MaxMindCityOrigin) Close() error {
+	return m.db.Close()
 }

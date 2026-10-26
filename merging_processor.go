@@ -99,6 +99,13 @@ func (m *MergingProcessor) sendHeader() error {
 }
 
 func (m *MergingProcessor) Receive(id string, block *Block) error {
+	// Sources call in from their own goroutines and checkEmit pulls from any
+	// queue that's ready, so everything here is under the lock. This also
+	// provides safety for anything downstream of us so they don't have to
+	// worry about it.
+	m.Lock()
+	defer m.Unlock()
+
 	if len(m.headerColumns) > 0 {
 		// We have header columns (on our first receive) we're need to emit the
 		// header which will clean them and we'll be done with it.
@@ -106,14 +113,7 @@ func (m *MergingProcessor) Receive(id string, block *Block) error {
 			return err
 		}
 	}
-	// Assuming each source (id) is single threaded, thus no locking
 	m.queues[id] = append(m.queues[id], block)
-
-	// We can get in checkEmit from multiple emitters and pull from any queue
-	// that's ready thus we need locking. This will also provide safety or
-	// amything downstream of us so they don't have to worry about it.
-	m.Lock()
-	defer m.Unlock()
 
 	return m.checkEmit()
 }
@@ -158,13 +158,13 @@ func (m *MergingProcessor) checkEmit() error {
 }
 
 func (m *MergingProcessor) Done(id string) error {
-	m.done[id] = true
-
 	// We can get in here from multiple emitters and thus need safety while in
 	// checkEmit and when we look to see if we're done, to avoid multiple Done
 	// events.
 	m.Lock()
 	defer m.Unlock()
+
+	m.done[id] = true
 
 	err := m.checkEmit()
 	if err != nil {

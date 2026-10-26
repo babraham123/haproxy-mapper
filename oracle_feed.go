@@ -15,22 +15,9 @@ type oraclePublicIpRanges struct {
 	} `json:"regions"`
 }
 
-type OracleOrigin struct {
-	httpJson HttpJson
-	Emitter
-}
-
-func OracleOriginCreate() (*OracleOrigin, error) {
-	return &OracleOrigin{
-		httpJson: HttpJsonCreate(),
-		Emitter: Emitter{
-			id: "oracle",
-		},
-	}, nil
-}
-
-func (o *OracleOrigin) Run(ipv4Only bool) error {
-	header := Header{
+var oracleFeed = FeedSpec{
+	id: "oracle",
+	header: Header{
 		general: `#
 # IP to Oracle mapping
 #
@@ -38,19 +25,17 @@ func (o *OracleOrigin) Run(ipv4Only bool) error {
 #
 `,
 		columns: "# cidr Oracle/service[,service]*/region\n",
-	}
-	if err := o.Header(header); err != nil {
-		return err
-	}
+	},
+	blocks: oracleBlocks,
+}
 
+func oracleBlocks(f Fetcher) (Blocks, error) {
 	ranges := oraclePublicIpRanges{}
-	err := o.httpJson.Fetch("https://docs.oracle.com/en-us/iaas/tools/public_ip_ranges.json", "GET", &ranges)
-	if err != nil {
-		return err
+	if err := fetchJSON(f, "https://docs.oracle.com/en-us/iaas/tools/public_ip_ranges.json", &ranges); err != nil {
+		return nil, err
 	}
 
 	blocks := make(Blocks, 0)
-
 	for _, region := range ranges.Regions {
 		for _, cidr := range region.Cidrs {
 			// Multiple tags for a given cidr, best we can do is sort and comma seperate them...
@@ -58,17 +43,11 @@ func (o *OracleOrigin) Run(ipv4Only bool) error {
 			value := "Oracle/" + strings.Join(cidr.Tags, ",") + "/" + region.Region
 			block, err := BlockCreateWithCidr(&cidr.Cidr, &value)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			blocks = append(blocks, block)
 		}
 	}
 
-	sort.Sort(blocks)
-
-	for _, block := range blocks {
-		o.Emit(block)
-	}
-
-	return o.Done()
+	return blocks, nil
 }

@@ -1,9 +1,5 @@
 package main
 
-import (
-	"sort"
-)
-
 type gcIpRanges struct {
 	Prefixes []struct {
 		Ipv4Prefix string `json:"ipv4Prefix"`
@@ -13,22 +9,9 @@ type gcIpRanges struct {
 	} `json:"prefixes"`
 }
 
-type GoogleCloudOrigin struct {
-	httpJson HttpJson
-	Emitter
-}
-
-func GoogleCloudOriginCreate() (*GoogleCloudOrigin, error) {
-	return &GoogleCloudOrigin{
-		httpJson: HttpJsonCreate(),
-		Emitter: Emitter{
-			id: "google_cloud",
-		},
-	}, nil
-}
-
-func (g *GoogleCloudOrigin) Run(ipv4Only bool) error {
-	header := Header{
+var googleCloudFeed = FeedSpec{
+	id: "google_cloud",
+	header: Header{
 		general: `#
 # IP to Google Cloud mapping
 #
@@ -38,15 +21,14 @@ func (g *GoogleCloudOrigin) Run(ipv4Only bool) error {
 #
 `,
 		columns: "# cidr GC/service/scope\n",
-	}
-	if err := g.Header(header); err != nil {
-		return err
-	}
+	},
+	blocks: googleCloudBlocks,
+}
 
+func googleCloudBlocks(f Fetcher) (Blocks, error) {
 	ranges := gcIpRanges{}
-	err := g.httpJson.Fetch("https://www.gstatic.com/ipranges/cloud.json", "GET", &ranges)
-	if err != nil {
-		return err
+	if err := fetchJSON(f, "https://www.gstatic.com/ipranges/cloud.json", &ranges); err != nil {
+		return nil, err
 	}
 
 	blocks := make(Blocks, 0)
@@ -54,26 +36,14 @@ func (g *GoogleCloudOrigin) Run(ipv4Only bool) error {
 		value := "GC/" + prefix.Service + "/" + prefix.Scope
 		cidr := prefix.Ipv4Prefix
 		if cidr == "" {
-			if ipv4Only {
-				// Only interested in v4
-				continue
-			}
 			cidr = prefix.Ipv6Prefix
 		}
 		block, err := BlockCreateWithCidr(&cidr, &value)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		blocks = append(blocks, block)
 	}
 
-	sort.Sort(blocks)
-
-	for _, block := range blocks {
-		g.Emit(block)
-	}
-
-	g.Done()
-
-	return nil
+	return blocks, nil
 }

@@ -4,4 +4,3 @@
 !go.mod
 !go.sum
 !*.go
-!geoip_generator.py

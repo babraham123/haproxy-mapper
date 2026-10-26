@@ -174,8 +174,16 @@ func (m *MaxMindIspOrigin) Run(ipv4Only bool) error {
 		}
 	}
 
-	m.asn.Done()
-	m.isp.Done()
+	if err := networks.Err(); err != nil {
+		return err
+	}
 
-	return nil
+	if err := m.asn.Done(); err != nil {
+		return err
+	}
+	return m.isp.Done()
+}
+
+func (m *MaxMindIspOrigin) Close() error {
+	return m.db.Close()
 }

@@ -3,8 +3,6 @@ package main
 import (
 	"errors"
 	"regexp"
-	"sort"
-	"strings"
 )
 
 type azureValues struct {
@@ -18,22 +16,11 @@ type azureValues struct {
 	} `json:"values"`
 }
 
-type AzureOrigin struct {
-	httpJson HttpJson
-	Emitter
-}
+const azureDownloadPage = "https://www.microsoft.com/en-us/download/confirmation.aspx?id=56519"
 
-func AzureOriginCreate() (*AzureOrigin, error) {
-	return &AzureOrigin{
-		httpJson: HttpJsonCreate(),
-		Emitter: Emitter{
-			id: "azure",
-		},
-	}, nil
-}
-
-func (a *AzureOrigin) Run(ipv4Only bool) error {
-	header := Header{
+var azureFeed = FeedSpec{
+	id: "azure",
+	header: Header{
 		general: `#
 # IP to Azure mapping
 #
@@ -41,35 +28,31 @@ func (a *AzureOrigin) Run(ipv4Only bool) error {
 #
 `,
 		columns: "# cidr Azure/service/region\n",
-	}
-	if err := a.Header(header); err != nil {
-		return err
-	}
+	},
+	blocks: azureBlocks,
+}
 
+func azureBlocks(f Fetcher) (Blocks, error) {
 	// WARNING: hack incoming... Azure doesn't have a non-authenticated way to
 	// grab its list of IP addresses via an api call, but you can visit a
 	// webpage to get the "current" url of said data. This is downloading that
 	// page and using a regex to pull out the URL we're after. Ugly, but it
 	// beats requiring an Azure account for auth... Going to go with this until
 	// it proves to flakey or something...
-	url := "https://www.microsoft.com/en-us/download/confirmation.aspx?id=56519"
-	bodyBytes, err := a.httpJson.FetchBody(url, "GET")
+	page, err := fetchBytes(f, azureDownloadPage)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	body := string(bodyBytes[:])
 
 	r := regexp.MustCompile(`click here to download.*href="(?P<url>[^"]+)"`)
-	matches := r.FindStringSubmatch(body)
+	matches := r.FindSubmatch(page)
 	if len(matches) != 2 {
-		return errors.New("Failed to find the download url (hacky)")
+		return nil, errors.New("Failed to find the download url (hacky)")
 	}
-	url = matches[1]
 
 	values := azureValues{}
-	err = a.httpJson.Fetch(url, "GET", &values)
-	if err != nil {
-		return err
+	if err := fetchJSON(f, string(matches[1]), &values); err != nil {
+		return nil, err
 	}
 
 	blocks := make(Blocks, 0)
@@ -80,25 +63,13 @@ func (a *AzureOrigin) Run(ipv4Only bool) error {
 		}
 		info := "Azure/" + value.Properties.SystemService + "/" + value.Properties.Region
 		for _, cidr := range value.Properties.AddressPrefixes {
-			if strings.Index(cidr, ":") != -1 && ipv4Only {
-				// Ipv6 addr and we aren't interested
-				continue
-			}
 			block, err := BlockCreateWithCidr(&cidr, &info)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			blocks = append(blocks, block)
 		}
 	}
 
-	sort.Sort(blocks)
-
-	for _, block := range blocks {
-		a.Emit(block)
-	}
-
-	a.Done()
-
-	return nil
+	return blocks, nil
 }

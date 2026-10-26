@@ -156,8 +156,8 @@ http-request set-var(txn.real_ip_location) req.hdr(x-real-ip-location)
 ## Generating Maps
 
 The shortcut `-all` will create all available maps. It requires both MaxMind
-City and either ISP or ASN databases. If the ASN database is used ISP data is
-not included in the generated maps.
+City and either ISP or ASN databases, or `-geolite2`. If the ASN database is
+used ISP data is not included in the generated maps.
 
 ```console
 $ haproxy-mapper -outdir /tmp/mapper -all -isp-db GeoIP2-ISP.mmdb -city-db GeoIP2-City.mmdb
@@ -186,106 +186,88 @@ $ wc -l /tmp/mapper/*
 $ haproxy-mapper
 Usage of ./haproxy-mapper:
   -all
-        Include All data
+    	Include All data
   -asn
-        Include asn map, requires -asn-db or -isp-db
+    	Include asn map, requires -asn-db, -isp-db or -geolite2
   -asn-db string
-        MaxMind ASN database file
+    	MaxMind ASN database file
   -aws
-        Include AWS data
+    	Include AWS data
   -azure
-        Include Azure data
+    	Include Azure data
   -city
-        Include city map, requires -city-db
+    	Include city map, requires -city-db or -geolite2
   -city-db string
-        MaxMind City database file
+    	MaxMind City or Country database file
   -cloudflare
-        Include Cloudflare data
+    	Include Cloudflare data
   -continent
-        Include continent map, requires -city-db
+    	Include continent map, requires -city-db or -geolite2
   -country
-        Include country map, requires -city-db
+    	Include country map, requires -city-db or -geolite2
+  -country-dir string
+    	Write one <ISO code>.map per country, a CIDR per line, into this directory,
+    	replacing its *.map files; requires -city-db or -geolite2
   -fastly
-        Include Fastly data
+    	Include Fastly data
+  -geolite2
+    	Download the free MaxMind GeoLite2 databases the selected maps need instead of -asn-db and -city-db,
+    	using the MAXMIND_LICENSE_KEY environment variable
   -google-cloud
-        Include Google Cloud data
+    	Include Google Cloud data
   -ipv6
-        Process IPv6 data, -ipv6=false to disable (default true)
+    	Process IPv6 data, -ipv6=false to disable (default true)
   -isp
-        Include isp map, requires -isp-db
+    	Include isp map, requires -isp-db
   -isp-db string
-        MaxMind ISP database file
+    	MaxMind ISP database file
   -location
-        Include location map, requires -city-db
+    	Include location map, requires -city-db or -geolite2
   -oracle
-        Include Oracle data
+    	Include Oracle data
   -outdir string
-        Output directory
+    	Output directory
   -provider
-        Include providers map
+    	Include providers map, merging the selected provider maps
   -spamhaus
-        Include spamhaus data
+    	Include spamhaus data
   -subdivisions
-        Include subdivisions map, requires -city-db
+    	Include subdivisions map, requires -city-db or -geolite2
 ```
 
-## Example Script/Process
+## Free GeoLite2 databases
 
-[examples/generate.sh](examples/generate.sh) is a starting point on which to
-build a process for downloading MaxMind databases and building maps. It can be
-run with the following. It uses the `-all` option, though as written relies on
-the free databases and thus does not include the ISP map.
+`-geolite2` downloads the free MaxMind GeoLite2 databases the selected maps
+need, in place of `-asn-db` and `-city-db`. It reads a license key, free with a
+MaxMind account, from `MAXMIND_LICENSE_KEY`. The continent and country maps use
+the smaller Country database, the others City; GeoLite2 has no ISP data, so
+`-all` leaves out the isp map.
 
-```
-$ go build && PATH=$PATH:. ./examples/generate.sh
-x GeoLite2-City_20210727/
-x GeoLite2-City_20210727/README.txt
-x GeoLite2-City_20210727/COPYRIGHT.txt
-x GeoLite2-City_20210727/GeoLite2-City.mmdb
-x GeoLite2-City_20210727/LICENSE.txt
-x GeoLite2-ASN_20210727/
-x GeoLite2-ASN_20210727/COPYRIGHT.txt
-x GeoLite2-ASN_20210727/GeoLite2-ASN.mmdb
-x GeoLite2-ASN_20210727/LICENSE.txt
-Maps in out
-  555291 out/ip_to_asn
-    4936 out/ip_to_aws
-   15868 out/ip_to_azure
- 3451689 out/ip_to_city
-      22 out/ip_to_cloudflare
- 6117600 out/ip_to_continent
- 6115499 out/ip_to_country
-      19 out/ip_to_fastly
-     433 out/ip_to_google_cloud
- 6117600 out/ip_to_location
-     346 out/ip_to_oracle
-   21624 out/ip_to_provider
-    1132 out/ip_to_spamhaus
- 3766966 out/ip_to_subdivisions
- 26169025 total
+```console
+$ MAXMIND_LICENSE_KEY=... haproxy-mapper -outdir out -all -geolite2
 ```
 
 ## Per-country maps
 
-[geoip_generator.py](geoip_generator.py) downloads the free MaxMind GeoLite2
-Country database, runs `haproxy-mapper -country` on it, and splits
-`ip_to_country` into one file per country, `<ISO code>.map` with one CIDR per
-line. Every run replaces the `*.map` files in the output directory.
+`-country-dir` writes one file per country, `<ISO code>.map` with one CIDR per
+line, alongside or instead of `ip_to_country`. Every run replaces the `*.map`
+files in the directory, once the new set is complete.
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `MAXMIND_LICENSE_KEY` | none, required | Downloads the database |
-| `OUTPUT_DIR` | `/etc/haproxy/countries` | Where the maps go |
+```console
+$ MAXMIND_LICENSE_KEY=... haproxy-mapper -geolite2 -country-dir /etc/haproxy/countries
+```
 
 [geoip_generator.Containerfile](geoip_generator.Containerfile) builds
-haproxy-mapper and runs the script:
+haproxy-mapper into an image that does this by default:
 
 ```console
 $ podman build -f geoip_generator.Containerfile -t geoip_generator .
 $ podman run --rm -e MAXMIND_LICENSE_KEY \
     -v /etc/haproxy/countries:/etc/haproxy/countries geoip_generator
-Successfully Generated 250 country files in: /etc/haproxy/countries
 ```
+
+Arguments after the image name replace the defaults, e.g. `-geolite2
+-country-dir /out` to write elsewhere.
 
 Each file is an HAProxy ACL pattern file, e.g. to block a country:
 

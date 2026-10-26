@@ -69,7 +69,9 @@ func (m *MapDestination) Done(id string) error {
 		err = m.buf.Flush()
 	}
 	if m.fh != nil {
-		return m.fh.Close()
+		if closeErr := m.fh.Close(); err == nil {
+			err = closeErr
+		}
 	}
 	return err
 }

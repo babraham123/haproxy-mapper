@@ -11,20 +11,6 @@
   "minimumReleaseAge": "3 days",
   "osvVulnerabilityAlerts": true,
   "dependencyDashboardOSVVulnerabilitySummary": "unresolved",
-  "customManagers": [
-    {
-      "customType": "regex",
-      "description": "ruff, run by uvx in CI",
-      "managerFilePatterns": [
-        "/^\\.github/workflows/.+\\.ya?ml$/"
-      ],
-      "matchStrings": [
-        "ruff@(?<currentValue>[0-9][0-9.]*)"
-      ],
-      "datasourceTemplate": "pypi",
-      "depNameTemplate": "ruff"
-    }
-  ],
   "packageRules": [
     {
       "matchManagers": [
