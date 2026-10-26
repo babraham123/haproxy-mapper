@@ -9,8 +9,11 @@ import (
 )
 
 type MergingProcessor struct {
-	queues        map[string][]*Block
-	done          map[string]bool
+	queues  map[string][]*Block
+	done    map[string]bool
+	sources []string
+	// Sources run concurrently, so the merged header waits until every one has sent its own.
+	headers       int
 	headerColumns []string
 	Emitter
 	sync.Mutex
@@ -29,6 +32,7 @@ func MergingProcessorCreate(id string) *MergingProcessor {
 
 func (m *MergingProcessor) Subscribed(id string) {
 	m.queues[id] = make([]*Block, 0)
+	m.sources = append(m.sources, id)
 }
 
 func (m *MergingProcessor) Header(id string, header Header) error {
@@ -38,7 +42,11 @@ func (m *MergingProcessor) Header(id string, header Header) error {
 	if len(header.columns) > 0 {
 		m.headerColumns = append(m.headerColumns, header.columns)
 	}
-	return nil
+	m.headers++
+	if m.headers < len(m.sources) {
+		return nil
+	}
+	return m.sendHeader()
 }
 
 func (m *MergingProcessor) sendHeader() error {
@@ -58,11 +66,7 @@ func (m *MergingProcessor) sendHeader() error {
 		return err
 	}
 
-	ids := make([]string, 0)
-	for id, _ := range m.queues {
-		ids = append(ids, id)
-	}
-
+	ids := append([]string(nil), m.sources...)
 	sort.Strings(ids)
 
 	context := struct {
@@ -92,9 +96,6 @@ func (m *MergingProcessor) sendHeader() error {
 		}
 	}
 
-	// clear out our header columns now
-	m.headerColumns = make([]string, 0)
-
 	return nil
 }
 
@@ -106,13 +107,6 @@ func (m *MergingProcessor) Receive(id string, block *Block) error {
 	m.Lock()
 	defer m.Unlock()
 
-	if len(m.headerColumns) > 0 {
-		// We have header columns (on our first receive) we're need to emit the
-		// header which will clean them and we'll be done with it.
-		if err := m.sendHeader(); err != nil {
-			return err
-		}
-	}
 	m.queues[id] = append(m.queues[id], block)
 
 	return m.checkEmit()

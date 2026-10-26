@@ -4,12 +4,31 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"iter"
 	"net"
+	"net/netip"
 	"strings"
 	"text/template"
 
-	maxminddb "github.com/oschwald/maxminddb-golang"
+	"github.com/oschwald/maxminddb-golang/v2"
 )
+
+// maxMindNetworks iterates db's networks with data: the IPv4 ones, or all of them with the IPv4
+// subtree once (its IPv6 aliases are skipped by default).
+func maxMindNetworks(db *maxminddb.Reader, ipv4Only bool) iter.Seq[maxminddb.Result] {
+	prefix := netip.MustParsePrefix("::/0")
+	if ipv4Only {
+		prefix = netip.MustParsePrefix("0.0.0.0/0")
+	}
+	return db.NetworksWithin(prefix)
+}
+
+func ipNet(prefix netip.Prefix) *net.IPNet {
+	return &net.IPNet{
+		IP:   prefix.Addr().AsSlice(),
+		Mask: net.CIDRMask(prefix.Bits(), prefix.Addr().BitLen()),
+	}
+}
 
 func MaxMindHeader(valueDescription string, dbMetadata maxminddb.Metadata) (string, error) {
 	// TODO can this be a global const or something...
@@ -135,47 +154,26 @@ func (m *MaxMindIspOrigin) Run(ipv4Only bool) error {
 		return err
 	}
 
-	cidr := "::/0"
-	if ipv4Only {
-		cidr = "0.0.0.0/0"
-	}
-	_, network, err := net.ParseCIDR(cidr)
-	if err != nil {
-		return err
-	}
-	networks := m.db.NetworksWithin(network)
-	if !ipv4Only {
-		// We only want Ipv4 addresses once, if we call this when iterating
-		// over 0.0.0.0/8 we get nothing for some reason
-		maxminddb.SkipAliasedNetworks(networks)
-	}
-
-	for networks.Next() {
+	for result := range maxMindNetworks(m.db, ipv4Only) {
 		record := recordIsp{}
-		net, err := networks.Network(&record)
-		if err != nil {
+		if err := result.Decode(&record); err != nil {
 			return err
 		}
+		net := ipNet(result.Prefix())
 
 		if record.Asn != 0 {
 			asn := fmt.Sprintf("AS%d", record.Asn)
 
-			err = m.asn.Emit(BlockCreate(net, &asn))
-			if err != nil {
+			if err := m.asn.Emit(BlockCreate(net, &asn)); err != nil {
 				return err
 			}
 		}
 
 		if record.Isp != "" {
-			err = m.isp.Emit(BlockCreate(net, &record.Isp))
-			if err != nil {
+			if err := m.isp.Emit(BlockCreate(net, &record.Isp)); err != nil {
 				return err
 			}
 		}
-	}
-
-	if err := networks.Err(); err != nil {
-		return err
 	}
 
 	if err := m.asn.Done(); err != nil {

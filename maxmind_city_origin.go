@@ -5,7 +5,7 @@ import (
 	"net"
 	"strings"
 
-	maxminddb "github.com/oschwald/maxminddb-golang"
+	"github.com/oschwald/maxminddb-golang/v2"
 )
 
 type recordCity struct {
@@ -153,33 +153,14 @@ func (m *MaxMindCityOrigin) Run(ipv4Only bool) error {
 		return err
 	}
 
-	cidr := "::/0"
-	if ipv4Only {
-		cidr = "0.0.0.0/0"
-	}
-	_, network, err := net.ParseCIDR(cidr)
-	if err != nil {
-		return err
-	}
-	networks := m.db.NetworksWithin(network)
-	if !ipv4Only {
-		// We only want Ipv4 addresses once, if we call this when iterating
-		// over 0.0.0.0/8 we get nothing for some reason
-		maxminddb.SkipAliasedNetworks(networks)
-	}
-
-	for networks.Next() {
+	for result := range maxMindNetworks(m.db, ipv4Only) {
 		record := recordCity{}
-		net, err := networks.Network(&record)
-		if err != nil {
+		if err := result.Decode(&record); err != nil {
 			return err
 		}
-		if err := m.emit(net, &record); err != nil {
+		if err := m.emit(ipNet(result.Prefix()), &record); err != nil {
 			return err
 		}
-	}
-	if err := networks.Err(); err != nil {
-		return err
 	}
 
 	for _, emitter := range []*Emitter{&m.city, &m.continent, &m.country, &m.location, &m.subdivisions} {
