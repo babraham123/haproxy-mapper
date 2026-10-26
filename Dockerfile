@@ -1,5 +1,5 @@
 # Stage 1: Build the binary
-FROM --platform=linux/amd64 debian:trixie AS builder
+FROM --platform=linux/amd64 debian:trixie@sha256:4c25275446ca371766b8b093c696782eabce06263fccacb8d5d813b3dc44b308 AS builder
 
 # Install dependencies: Go, git, and sed
 RUN apt-get update && \
