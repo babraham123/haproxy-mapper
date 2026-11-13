@@ -3,7 +3,7 @@
 # Usage:
 #   podman build -f geoip_generator.Containerfile -t geoip_generator .
 
-FROM docker.io/library/golang:1-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS mapper
+FROM docker.io/library/golang:1-alpine@sha256:eb61c3873c97416fff0116553fff65d67a3549f72e11d9758849a689cdd8b523 AS mapper
 WORKDIR /src
 COPY . .
 RUN go mod download && \
