@@ -84,7 +84,7 @@ type Pipeline struct {
 }
 
 // BuildPipeline validates opts, downloads and opens any databases, and wires
-// every selected map. Files in Outdir are created here; they're written by Run.
+// every selected map. Maps in Outdir are replaced only when Run completes them.
 func BuildPipeline(opts Options) (_ *Pipeline, err error) {
 	// selected maps get a file in Outdir; needed maps have their source run.
 	selected := make(map[string]bool)
@@ -153,6 +153,7 @@ func BuildPipeline(opts Options) (_ *Pipeline, err error) {
 		if err != nil {
 			return nil, err
 		}
+		p.closers = append(p.closers, dest.Close)
 		merger.AddReceiver(dest)
 	}
 
@@ -167,6 +168,7 @@ func BuildPipeline(opts Options) (_ *Pipeline, err error) {
 			if err != nil {
 				return nil, err
 			}
+			p.closers = append(p.closers, dest.Close)
 			dests = append(dests, dest)
 		}
 		if dir := opts.SplitDirs[spec.flag]; dir != "" {
@@ -330,7 +332,8 @@ func (p *Pipeline) Run() error {
 	return errors.Join(all...)
 }
 
-// Close releases databases and removes downloads and staging directories.
+// Close releases databases and removes downloads, staging directories and
+// unfinished temporary map files.
 func (p *Pipeline) Close() error {
 	all := make([]error, 0)
 	for i := len(p.closers) - 1; i >= 0; i-- {

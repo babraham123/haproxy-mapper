@@ -318,6 +318,11 @@ func TestCountryDir(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(countryDir, "XX.map"), []byte("10.0.0.0/8\n"))
 	writeFile(t, filepath.Join(countryDir, "README"), []byte("kept\n"))
+	// left by a killed run
+	if err := os.MkdirAll(filepath.Join(countryDir, ".staging-killed"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(countryDir, ".staging-killed", "AU.map"), []byte("10.0.0.0/8\n"))
 
 	outdir := t.TempDir()
 	runPipeline(t, Options{
